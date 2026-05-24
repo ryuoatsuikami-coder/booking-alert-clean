@@ -14,19 +14,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private var ready = false
 
     private val locations = listOf(
-        "General Trias",
-        "Tanza",
-        "Dasmarinas",
-        "Imus",
-        "Kawit",
-        "Noveleta",
-        "Bacoor",
-        "Trece Martires",
-        "Naic",
-        "Tagaytay"
+        "General Trias", "Tanza", "Dasmarinas", "Imus", "Kawit",
+        "Noveleta", "Bacoor", "Trece Martires", "Naic", "Tagaytay"
     )
 
-    private val checkBoxes = mutableListOf<CheckBox>()
+    private val locationBoxes = mutableListOf<CheckBox>()
+    private val routeBoxes = mutableListOf<CheckBox>()
 
     private val speakReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -39,7 +32,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         super.onCreate(savedInstanceState)
 
         tts = TextToSpeech(this, this)
-
         val prefs = getSharedPreferences("booking_prefs", MODE_PRIVATE)
 
         val scroll = ScrollView(this)
@@ -50,32 +42,59 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val title = TextView(this)
         title.text = "Booking Alert"
         title.textSize = 26f
-
-        val desc = TextView(this)
-        desc.text = "Select preferred pickup/dropoff locations. Any combination among selected places will be allowed."
-        desc.textSize = 15f
-
         layout.addView(title)
-        layout.addView(desc)
+
+        val locTitle = TextView(this)
+        locTitle.text = "Preferred Locations"
+        locTitle.textSize = 18f
+        layout.addView(locTitle)
 
         locations.forEach { location ->
             val cb = CheckBox(this)
             cb.text = location
             cb.textSize = 16f
-            cb.isChecked = prefs.getBoolean(location, true)
-            checkBoxes.add(cb)
+            cb.isChecked = prefs.getBoolean("loc_$location", true)
+            locationBoxes.add(cb)
+            layout.addView(cb)
+        }
+
+        val routeTitle = TextView(this)
+        routeTitle.text = "Preferred Routes"
+        routeTitle.textSize = 18f
+        routeTitle.setPadding(0, 25, 0, 0)
+        layout.addView(routeTitle)
+
+        val routes = mutableListOf<String>()
+        for (i in locations.indices) {
+            for (j in i until locations.size) {
+                routes.add("${locations[i]} ↔ ${locations[j]}")
+            }
+        }
+
+        routes.forEach { route ->
+            val cb = CheckBox(this)
+            cb.text = route
+            cb.textSize = 15f
+            cb.isChecked = prefs.getBoolean("route_$route", true)
+            routeBoxes.add(cb)
             layout.addView(cb)
         }
 
         val btnSave = Button(this)
-        btnSave.text = "Save Preferred Locations"
+        btnSave.text = "Save Settings"
         btnSave.setOnClickListener {
             val editor = prefs.edit()
-            checkBoxes.forEach {
-                editor.putBoolean(it.text.toString(), it.isChecked)
+
+            locationBoxes.forEach {
+                editor.putBoolean("loc_${it.text}", it.isChecked)
             }
+
+            routeBoxes.forEach {
+                editor.putBoolean("route_${it.text}", it.isChecked)
+            }
+
             editor.apply()
-            Toast.makeText(this, "Preferred locations saved", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Settings saved", Toast.LENGTH_SHORT).show()
         }
 
         val btnNotif = Button(this)
@@ -111,18 +130,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun speakNow(text: String) {
         if (!ready) {
-            Handler(Looper.getMainLooper()).postDelayed({
-                speakNow(text)
-            }, 700)
+            Handler(Looper.getMainLooper()).postDelayed({ speakNow(text) }, 700)
             return
         }
 
-        tts?.speak(
-            text,
-            TextToSpeech.QUEUE_FLUSH,
-            null,
-            "booking_alert_voice"
-        )
+        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "booking_alert_voice")
     }
 
     override fun onDestroy() {
