@@ -1,138 +1,102 @@
 package com.booking.alert
 
-import android.app.PendingIntent
-import android.content.Context
-import android.content.Intent
-import android.os.Build
-import android.os.Handler
-import android.os.Looper
-import android.os.VibrationEffect
-import android.os.Vibrator
+import android.app.*
+import android.content.*
+import android.os.*
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
-import android.speech.tts.TextToSpeech
-import java.util.Locale
+import android.media.AudioManager
+import android.net.Uri
 
 class BookingNotificationListener : NotificationListenerService() {
 
-    private var tts: TextToSpeech? = null
-    private var ttsReady = false
+    private val minFare = 200
 
-    override fun onCreate() {
-        super.onCreate()
+    private val allowedPlaces = listOf(
+        "gen trias",
+        "general trias",
+        "tanza",
+        "dasmarinas",
+        "dasma",
+        "imus",
+        "kawit",
+        "noveleta",
+        "bacoor",
+        "trece martires",
+        "naic",
+        "tagaytay"
+    )
 
-        tts = TextToSpeech(applicationContext) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                ttsReady = true
-                tts?.language = Locale.ENGLISH
-                tts?.setSpeechRate(1.05f)
-                tts?.setPitch(1.0f)
-            }
-        }
-    }
+    override fun onNotificationPosted(sbn: StatusBarNotification?) {
+        if (sbn == null) return
 
-    override fun onNotificationPosted(sbn: StatusBarNotification) {
-        val packageNameText = sbn.packageName ?: ""
-        if (!packageNameText.lowercase().contains("lalamove")) return
+        val packageName = sbn.packageName.lowercase()
+        if (!packageName.contains("lalamove")) return
 
-        val title = sbn.notification.extras.getString("android.title") ?: ""
-        val text = sbn.notification.extras.getCharSequence("android.text")?.toString() ?: ""
-        val bigText = sbn.notification.extras.getCharSequence("android.bigText")?.toString() ?: ""
-        val fullText = "$title $text $bigText"
+        val extras = sbn.notification.extras
+        val title = extras.getString(Notification.EXTRA_TITLE) ?: ""
+        val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
+        val bigText = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString() ?: ""
+
+        val fullText = "$title $text $bigText".lowercase()
 
         val fare = extractFare(fullText)
-        val prefs = getSharedPreferences("booking_prefs", MODE_PRIVATE)
-        val minFare = prefs.getInt("min_fare", 200)
+        if (fare < minFare) return
 
-        if (fare == null || fare < minFare) return
+        if (!hasAllowedRoute(fullText)) return
 
-        val route = extractRoute(fullText) ?: return
-        if (!isPreferredLocation(route.first) || !isPreferredLocation(route.second)) return
+        vibrate()
+        openLalamove()
 
-        val speechText = "${route.first} to ${route.second}. ${fare.toInt()} pesos."
-
-        vibrateAlert()
-        speakNow(speechText)
+        val speech = makeSpeech(fullText, fare)
 
         Handler(Looper.getMainLooper()).postDelayed({
-            openLalamove(sbn)
-        }, 2200)
+            val intent = Intent("com.booking.alert.SPEAK")
+            intent.putExtra("text", speech)
+            sendBroadcast(intent)
+        }, 1200)
     }
 
-    private fun extractFare(text: String): Double? {
-        val regex = Regex("""₱\s*([0-9,]+(?:\.\d{1,2})?)""")
-        val match = regex.find(text) ?: return null
-        return match.groupValues[1].replace(",", "").toDoubleOrNull()
+    private fun extractFare(text: String): Int {
+        val regex = Regex("""(?:₱|php|p)\s?(\d{2,5})""")
+        val match = regex.find(text)
+        return match?.groupValues?.get(1)?.toIntOrNull() ?: 0
     }
 
-    private fun extractRoute(text: String): Pair<String, String>? {
-        val cleaned = text
-            .replace("[Delivery]", "", ignoreCase = true)
-            .replace("immediate", "", ignoreCase = true)
-            .replace("Hurry up!", "", ignoreCase = true)
-            .replace(Regex("""₱\s*[0-9,]+(?:\.\d{1,2})?"""), "")
-            .trim()
-
-        val parts = cleaned.split(">").map { it.trim() }
-
-        return if (parts.size >= 2) {
-            Pair(parts[0].take(45), parts[1].take(45))
-        } else {
-            null
-        }
+    private fun hasAllowedRoute(text: String): Boolean {
+        val found = allowedPlaces.filter { text.contains(it) }
+        return found.size >= 2
     }
 
-    private fun isPreferredLocation(locationText: String): Boolean {
-        val prefs = getSharedPreferences("booking_prefs", MODE_PRIVATE)
-        val locations = prefs.getStringSet("locations", emptySet()) ?: emptySet()
+    private fun makeSpeech(text: String, fare: Int): String {
+        val pickup = allowedPlaces.firstOrNull { text.contains(it) } ?: "pickup"
+        val dropoff = allowedPlaces.lastOrNull { text.contains(it) } ?: "drop off"
 
-        val text = locationText.lowercase()
-
-        for (location in locations) {
-            val enabled = prefs.getBoolean("loc_$location", true)
-            if (enabled && text.contains(location.lowercase())) {
-                return true
-            }
-        }
-
-        return false
+        return "Booking. $pickup to $dropoff. Fare $fare pesos."
     }
 
-    private fun speakNow(text: String) {
-        if (ttsReady) {
-            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "booking_alert")
-        }
-    }
-
-    private fun vibrateAlert() {
-        val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+    private fun vibrate() {
+        val vibrator = getSystemService(VIBRATOR_SERVICE) as Vibrator
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
+            vibrator.vibrate(
+                VibrationEffect.createWaveform(
+                    longArrayOf(0, 250, 150, 250),
+                    -1
+                )
+            )
         } else {
-            vibrator.vibrate(500)
+            vibrator.vibrate(longArrayOf(0, 250, 150, 250), -1)
         }
     }
 
-    private fun openLalamove(sbn: StatusBarNotification) {
-        try {
-            val pendingIntent: PendingIntent? = sbn.notification.contentIntent
-            pendingIntent?.send()
-        } catch (e: Exception) {
-            try {
-                val launchIntent: Intent? =
-                    packageManager.getLaunchIntentForPackage(sbn.packageName)
+    private fun openLalamove() {
+        val launchIntent = packageManager.getLaunchIntentForPackage("com.lalamove.huolala.driver")
+            ?: packageManager.getLaunchIntentForPackage("com.lalamove.client.driver")
 
-                launchIntent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                startActivity(launchIntent)
-            } catch (_: Exception) {
-            }
+        if (launchIntent != null) {
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(launchIntent)
         }
-    }
-
-    override fun onDestroy() {
-        tts?.stop()
-        tts?.shutdown()
-        super.onDestroy()
     }
 }
