@@ -13,6 +13,21 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     private var ready = false
 
+    private val locations = listOf(
+        "General Trias",
+        "Tanza",
+        "Dasmarinas",
+        "Imus",
+        "Kawit",
+        "Noveleta",
+        "Bacoor",
+        "Trece Martires",
+        "Naic",
+        "Tagaytay"
+    )
+
+    private val checkBoxes = mutableListOf<CheckBox>()
+
     private val speakReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val text = intent?.getStringExtra("text") ?: return
@@ -25,6 +40,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
         tts = TextToSpeech(this, this)
 
+        val prefs = getSharedPreferences("booking_prefs", MODE_PRIVATE)
+
+        val scroll = ScrollView(this)
         val layout = LinearLayout(this)
         layout.orientation = LinearLayout.VERTICAL
         layout.setPadding(40, 60, 40, 40)
@@ -34,8 +52,31 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         title.textSize = 26f
 
         val desc = TextView(this)
-        desc.text = "Reads selected Lalamove bookings aloud and opens Lalamove."
-        desc.textSize = 16f
+        desc.text = "Select preferred pickup/dropoff locations. Any combination among selected places will be allowed."
+        desc.textSize = 15f
+
+        layout.addView(title)
+        layout.addView(desc)
+
+        locations.forEach { location ->
+            val cb = CheckBox(this)
+            cb.text = location
+            cb.textSize = 16f
+            cb.isChecked = prefs.getBoolean(location, true)
+            checkBoxes.add(cb)
+            layout.addView(cb)
+        }
+
+        val btnSave = Button(this)
+        btnSave.text = "Save Preferred Locations"
+        btnSave.setOnClickListener {
+            val editor = prefs.edit()
+            checkBoxes.forEach {
+                editor.putBoolean(it.text.toString(), it.isChecked)
+            }
+            editor.apply()
+            Toast.makeText(this, "Preferred locations saved", Toast.LENGTH_SHORT).show()
+        }
 
         val btnNotif = Button(this)
         btnNotif.text = "Open Notification Access"
@@ -46,15 +87,15 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val btnTest = Button(this)
         btnTest.text = "Test Voice"
         btnTest.setOnClickListener {
-            speakNow("Test booking. General Trias to Dasmarinas. Fare 250 pesos.")
+            speakNow("Booking. General Trias to Dasmarinas. Fare 250 pesos.")
         }
 
-        layout.addView(title)
-        layout.addView(desc)
+        layout.addView(btnSave)
         layout.addView(btnNotif)
         layout.addView(btnTest)
 
-        setContentView(layout)
+        scroll.addView(layout)
+        setContentView(scroll)
 
         registerReceiver(speakReceiver, IntentFilter("com.booking.alert.SPEAK"))
     }
@@ -62,7 +103,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             tts?.language = Locale("en", "PH")
-            tts?.setSpeechRate(1.15f)
+            tts?.setSpeechRate(1.0f)
             tts?.setPitch(1.0f)
             ready = true
         }
@@ -72,7 +113,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         if (!ready) {
             Handler(Looper.getMainLooper()).postDelayed({
                 speakNow(text)
-            }, 800)
+            }, 700)
             return
         }
 
