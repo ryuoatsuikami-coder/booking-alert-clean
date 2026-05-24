@@ -5,8 +5,32 @@ import android.content.*
 import android.os.*
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import android.speech.tts.TextToSpeech
+import java.util.Locale
 
 class BookingNotificationListener : NotificationListenerService() {
+
+    private var tts: TextToSpeech? = null
+    private var ttsReady = false
+    private var pendingSpeech: String? = null
+
+    override fun onCreate() {
+        super.onCreate()
+
+        tts = TextToSpeech(applicationContext) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                ttsReady = true
+                tts?.language = Locale("en", "PH")
+                tts?.setSpeechRate(1.0f)
+                tts?.setPitch(1.0f)
+
+                pendingSpeech?.let {
+                    speakNow(it)
+                    pendingSpeech = null
+                }
+            }
+        }
+    }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         if (sbn == null) return
@@ -27,12 +51,14 @@ class BookingNotificationListener : NotificationListenerService() {
         val route = extractRoute(fullText) ?: return
         if (!isPreferred(route.first) || !isPreferred(route.second)) return
 
+        val speechText = "${route.first} to ${route.second}. Fare $fare pesos."
+
         vibrate()
-        speak("${route.first} to ${route.second}. Fare $fare pesos.")
+        speakNow(speechText)
 
         Handler(Looper.getMainLooper()).postDelayed({
             openLalamove(sbn)
-        }, 1200)
+        }, 1800)
     }
 
     private fun extractFare(text: String): Int {
@@ -67,10 +93,18 @@ class BookingNotificationListener : NotificationListenerService() {
         return false
     }
 
-    private fun speak(text: String) {
-        val intent = Intent("com.booking.alert.SPEAK")
-        intent.putExtra("text", text)
-        sendBroadcast(intent)
+    private fun speakNow(text: String) {
+        if (!ttsReady || tts == null) {
+            pendingSpeech = text
+            return
+        }
+
+        tts?.speak(
+            text,
+            TextToSpeech.QUEUE_FLUSH,
+            null,
+            "booking_alert_voice"
+        )
     }
 
     private fun vibrate() {
@@ -109,5 +143,11 @@ class BookingNotificationListener : NotificationListenerService() {
                 }
             } catch (_: Exception) {}
         }
+    }
+
+    override fun onDestroy() {
+        tts?.stop()
+        tts?.shutdown()
+        super.onDestroy()
     }
 }
