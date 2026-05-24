@@ -8,13 +8,6 @@ import android.service.notification.StatusBarNotification
 
 class BookingNotificationListener : NotificationListenerService() {
 
-    private val minFare = 200
-
-    private val locations = listOf(
-        "General Trias", "Tanza", "Dasmarinas", "Imus", "Kawit",
-        "Noveleta", "Bacoor", "Trece Martires", "Naic", "Tagaytay"
-    )
-
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         if (sbn == null) return
         if (!sbn.packageName.lowercase().contains("lalamove")) return
@@ -25,69 +18,59 @@ class BookingNotificationListener : NotificationListenerService() {
         val bigText = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString() ?: ""
         val fullText = "$title $text $bigText"
 
+        val prefs = getSharedPreferences("booking_prefs", MODE_PRIVATE)
+        val minFare = prefs.getInt("min_fare", 200)
         val fare = extractFare(fullText)
+
         if (fare < minFare) return
 
         val route = extractRoute(fullText) ?: return
-        if (!isSelectedRoute(route.first, route.second)) return
+        if (!isPreferred(route.first) || !isPreferred(route.second)) return
 
         vibrate()
         speak("${route.first} to ${route.second}. Fare $fare pesos.")
-        openLalamove(sbn)
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            openLalamove(sbn)
+        }, 1200)
     }
 
     private fun extractFare(text: String): Int {
-        val regex = Regex("""(?:₱|php|p)\s?(\d{2,5})""", RegexOption.IGNORE_CASE)
-        return regex.find(text)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        val regex = Regex("""(?:₱|php|p)\s?([0-9,]+)(?:\.\d{1,2})?""", RegexOption.IGNORE_CASE)
+        val match = regex.find(text) ?: return 0
+        return match.groupValues[1].replace(",", "").toIntOrNull() ?: 0
     }
 
     private fun extractRoute(text: String): Pair<String, String>? {
-        val parts = text.split(">").map { it.trim() }
-        if (parts.size < 2) return null
-
-        val pickup = cleanLocation(parts[0])
-        val dropoff = cleanLocation(parts[1])
-
-        return Pair(pickup, dropoff)
-    }
-
-    private fun cleanLocation(text: String): String {
-        return text
+        val cleaned = text
             .replace("[Delivery]", "", ignoreCase = true)
             .replace("immediate", "", ignoreCase = true)
             .replace("Hurry up!", "", ignoreCase = true)
-            .replace(Regex("""₱\s*\d+"""), "")
+            .replace(Regex("""(?:₱|php|p)\s?[0-9,]+(?:\.\d{1,2})?""", RegexOption.IGNORE_CASE), "")
             .trim()
+
+        val parts = cleaned.split(">").map { it.trim() }
+        if (parts.size < 2) return null
+
+        return Pair(parts[0].take(45), parts[1].take(45))
     }
 
-    private fun isSelectedRoute(pickup: String, dropoff: String): Boolean {
+    private fun isPreferred(locationText: String): Boolean {
         val prefs = getSharedPreferences("booking_prefs", MODE_PRIVATE)
+        val locations = prefs.getStringSet("locations", emptySet()) ?: emptySet()
+        val text = locationText.lowercase()
 
-        val p = matchLocation(pickup) ?: return false
-        val d = matchLocation(dropoff) ?: return false
-
-        val pEnabled = prefs.getBoolean("loc_$p", true)
-        val dEnabled = prefs.getBoolean("loc_$d", true)
-
-        val route1 = "$p ↔ $d"
-        val route2 = "$d ↔ $p"
-
-        val routeEnabled =
-            prefs.getBoolean("route_$route1", true) ||
-            prefs.getBoolean("route_$route2", true)
-
-        return pEnabled && dEnabled && routeEnabled
+        for (place in locations) {
+            val enabled = prefs.getBoolean("loc_$place", true)
+            if (enabled && text.contains(place.lowercase())) return true
+        }
+        return false
     }
 
-    private fun matchLocation(text: String): String? {
-        val lower = text.lowercase()
-
-        return locations.firstOrNull { loc ->
-            val locLower = loc.lowercase()
-            lower.contains(locLower) ||
-            lower.contains(locLower.replace("general trias", "gen trias")) ||
-            lower.contains(locLower.replace("dasmarinas", "dasma"))
-        }
+    private fun speak(text: String) {
+        val intent = Intent("com.booking.alert.SPEAK")
+        intent.putExtra("text", text)
+        sendBroadcast(intent)
     }
 
     private fun vibrate() {
@@ -99,19 +82,32 @@ class BookingNotificationListener : NotificationListenerService() {
         }
     }
 
-    private fun speak(text: String) {
-        val intent = Intent("com.booking.alert.SPEAK")
-        intent.putExtra("text", text)
-        sendBroadcast(intent)
-    }
-
     private fun openLalamove(sbn: StatusBarNotification) {
         try {
-            sbn.notification.contentIntent?.send()
-        } catch (e: Exception) {
-            val launchIntent = packageManager.getLaunchIntentForPackage(sbn.packageName)
-            launchIntent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            if (launchIntent != null) startActivity(launchIntent)
+            val clickIntent = sbn.notification.contentIntent
+            if (clickIntent != null) {
+                clickIntent.send()
+                return
+            }
+        } catch (_: Exception) {}
+
+        val packages = listOf(
+            sbn.packageName,
+            "com.lalamove.huolala.driver",
+            "com.lalamove.client.driver",
+            "com.lalamove.global.driver",
+            "com.lalamove.driver"
+        )
+
+        for (pkg in packages) {
+            try {
+                val launchIntent = packageManager.getLaunchIntentForPackage(pkg)
+                if (launchIntent != null) {
+                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(launchIntent)
+                    return
+                }
+            } catch (_: Exception) {}
         }
     }
 }
