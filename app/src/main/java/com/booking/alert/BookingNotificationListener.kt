@@ -1,4 +1,4 @@
-package com.booking.alert
+ipackage com.booking.alert
 
 import android.app.Notification
 import android.media.RingtoneManager
@@ -33,9 +33,9 @@ class BookingNotificationListener : NotificationListenerService() {
         val hasDropoff = dropoffKeywords.any { content.contains(it) }
         val fare = extractFare(content)
 
-        if (hasPickup && hasDropoff && fare >= 200) {
-            alertDriver()
-        }
+        if (packageNameText.lowercase().contains("lalamove")) {
+    alertDriver()
+}
     }
 
     private fun extractFare(text: String): Int {
