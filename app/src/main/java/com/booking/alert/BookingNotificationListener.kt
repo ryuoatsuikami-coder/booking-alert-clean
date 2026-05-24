@@ -1,7 +1,10 @@
 package com.booking.alert
 
-import android.app.*
-import android.content.*
+import android.app.Notification
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.media.AudioAttributes
 import android.os.*
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -12,7 +15,7 @@ class BookingNotificationListener : NotificationListenerService() {
 
     private var tts: TextToSpeech? = null
     private var ttsReady = false
-    private var pendingSpeech: String? = null
+    private var pendingText: String? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -20,13 +23,22 @@ class BookingNotificationListener : NotificationListenerService() {
         tts = TextToSpeech(applicationContext) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 ttsReady = true
-                tts?.language = Locale("en", "PH")
+                tts?.language = Locale.ENGLISH
                 tts?.setSpeechRate(1.0f)
                 tts?.setPitch(1.0f)
 
-                pendingSpeech?.let {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    tts?.setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build()
+                    )
+                }
+
+                pendingText?.let {
                     speakNow(it)
-                    pendingSpeech = null
+                    pendingText = null
                 }
             }
         }
@@ -58,7 +70,21 @@ class BookingNotificationListener : NotificationListenerService() {
 
         Handler(Looper.getMainLooper()).postDelayed({
             openLalamove(sbn)
-        }, 1800)
+        }, 2500)
+    }
+
+    private fun speakNow(text: String) {
+        if (!ttsReady || tts == null) {
+            pendingText = text
+            return
+        }
+
+        tts?.speak(
+            text,
+            TextToSpeech.QUEUE_FLUSH,
+            null,
+            "booking_alert_voice"
+        )
     }
 
     private fun extractFare(text: String): Int {
@@ -90,59 +116,29 @@ class BookingNotificationListener : NotificationListenerService() {
             val enabled = prefs.getBoolean("loc_$place", true)
             if (enabled && text.contains(place.lowercase())) return true
         }
+
         return false
     }
 
-    private fun speakNow(text: String) {
-        if (!ttsReady || tts == null) {
-            pendingSpeech = text
-            return
-        }
-
-        tts?.speak(
-            text,
-            TextToSpeech.QUEUE_FLUSH,
-            null,
-            "booking_alert_voice"
-        )
-    }
-
     private fun vibrate() {
-        val vibrator = getSystemService(VIBRATOR_SERVICE) as Vibrator
+        val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 250, 150, 250), -1))
+            vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 300, 150, 300), -1))
         } else {
-            vibrator.vibrate(longArrayOf(0, 250, 150, 250), -1)
+            vibrator.vibrate(longArrayOf(0, 300, 150, 300), -1)
         }
     }
 
     private fun openLalamove(sbn: StatusBarNotification) {
         try {
-            val clickIntent = sbn.notification.contentIntent
-            if (clickIntent != null) {
-                clickIntent.send()
-                return
-            }
+            sbn.notification.contentIntent?.send()
+            return
         } catch (_: Exception) {}
 
-        val packages = listOf(
-            sbn.packageName,
-            "com.lalamove.huolala.driver",
-            "com.lalamove.client.driver",
-            "com.lalamove.global.driver",
-            "com.lalamove.driver"
-        )
-
-        for (pkg in packages) {
-            try {
-                val launchIntent = packageManager.getLaunchIntentForPackage(pkg)
-                if (launchIntent != null) {
-                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    startActivity(launchIntent)
-                    return
-                }
-            } catch (_: Exception) {}
-        }
+        val launchIntent = packageManager.getLaunchIntentForPackage(sbn.packageName)
+        launchIntent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (launchIntent != null) startActivity(launchIntent)
     }
 
     override fun onDestroy() {
