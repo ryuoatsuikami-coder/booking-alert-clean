@@ -9,15 +9,8 @@ class BookingNotificationListener : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val packageNameText = sbn.packageName ?: ""
-        val title = sbn.notification.extras.getString("android.title") ?: ""
-        val text = sbn.notification.extras.getCharSequence("android.text")?.toString() ?: ""
-        val fullText = "$title $text"
 
-        if (
-            packageNameText.lowercase().contains("lalamove") &&
-            fullText.contains("₱") &&
-            fullText.contains("200")
-        ) {
+        if (packageNameText.lowercase().contains("lalamove")) {
             playAlert()
         }
     }
