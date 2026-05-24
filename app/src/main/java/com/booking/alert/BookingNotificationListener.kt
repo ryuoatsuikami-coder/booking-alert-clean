@@ -20,6 +20,7 @@ class BookingNotificationListener : NotificationListenerService() {
 
     override fun onCreate() {
         super.onCreate()
+
         tts = TextToSpeech(applicationContext) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 ttsReady = true
@@ -40,10 +41,13 @@ class BookingNotificationListener : NotificationListenerService() {
         val fullText = "$title $text $bigText"
 
         val fare = extractFare(fullText)
-        if (fare == null || fare < 200) return
+        val prefs = getSharedPreferences("booking_prefs", MODE_PRIVATE)
+        val minFare = prefs.getInt("min_fare", 200)
+
+        if (fare == null || fare < minFare) return
 
         val route = extractRoute(fullText) ?: return
-        if (!isAllowedRoute(route.first, route.second)) return
+        if (!isSelectedRoute(route.first, route.second)) return
 
         val speechText = "${route.first} to ${route.second}. ${fare.toInt()} pesos."
 
@@ -72,28 +76,43 @@ class BookingNotificationListener : NotificationListenerService() {
         val parts = cleaned.split(">").map { it.trim() }
 
         return if (parts.size >= 2) {
-            Pair(parts[0].take(40), parts[1].take(40))
+            Pair(parts[0].take(45), parts[1].take(45))
         } else {
             null
         }
     }
 
-    private fun isAllowedRoute(pickup: String, dropoff: String): Boolean {
+    private fun isSelectedRoute(pickup: String, dropoff: String): Boolean {
         val p = normalizeLocation(pickup)
         val d = normalizeLocation(dropoff)
 
-        val allowed = listOf(
-            "gen trias",
-            "tanza",
-            "dasmarinas",
-            "imus",
-            "kawit",
-            "noveleta"
-        )
+        val routeKey = routeKey(p, d) ?: return false
 
-        return allowed.contains(p) &&
-               allowed.contains(d) &&
-               (p == "gen trias" || d == "gen trias")
+        val prefs = getSharedPreferences("booking_prefs", MODE_PRIVATE)
+        return prefs.getBoolean(routeKey, true)
+    }
+
+    private fun routeKey(pickup: String, dropoff: String): String? {
+        val p = normalizeLocation(pickup)
+        val d = normalizeLocation(dropoff)
+
+        return when {
+            isPair(p, d, "gen trias", "gen trias") -> "Gen Trias ↔ Gen Trias"
+            isPair(p, d, "gen trias", "tanza") -> "Gen Trias ↔ Tanza"
+            isPair(p, d, "gen trias", "dasmarinas") -> "Gen Trias ↔ Dasmarinas"
+            isPair(p, d, "gen trias", "imus") -> "Gen Trias ↔ Imus"
+            isPair(p, d, "gen trias", "kawit") -> "Gen Trias ↔ Kawit"
+            isPair(p, d, "gen trias", "noveleta") -> "Gen Trias ↔ Noveleta"
+            isPair(p, d, "gen trias", "bacoor") -> "Gen Trias ↔ Bacoor"
+            isPair(p, d, "gen trias", "trece martires") -> "Gen Trias ↔ Trece Martires"
+            isPair(p, d, "gen trias", "naic") -> "Gen Trias ↔ Naic"
+            isPair(p, d, "gen trias", "tagaytay") -> "Gen Trias ↔ Tagaytay"
+            else -> null
+        }
+    }
+
+    private fun isPair(a: String, b: String, x: String, y: String): Boolean {
+        return (a == x && b == y) || (a == y && b == x)
     }
 
     private fun normalizeLocation(location: String): String {
@@ -113,6 +132,13 @@ class BookingNotificationListener : NotificationListenerService() {
             l.contains("imus") -> "imus"
             l.contains("kawit") -> "kawit"
             l.contains("noveleta") -> "noveleta"
+            l.contains("bacoor") -> "bacoor"
+
+            l.contains("trece martires") ||
+            l.contains("trece") -> "trece martires"
+
+            l.contains("naic") -> "naic"
+            l.contains("tagaytay") -> "tagaytay"
 
             else -> l
         }
