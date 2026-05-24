@@ -86,33 +86,20 @@ class BookingNotificationListener : NotificationListenerService() {
         val p = normalizeLocation(pickup)
         val d = normalizeLocation(dropoff)
 
-        val routeKey = routeKey(p, d) ?: return false
+        val allowedPlaces = listOf(
+            "gen trias",
+            "tanza",
+            "dasmarinas",
+            "imus",
+            "kawit",
+            "noveleta",
+            "bacoor",
+            "trece martires",
+            "naic",
+            "tagaytay"
+        )
 
-        val prefs = getSharedPreferences("booking_prefs", MODE_PRIVATE)
-        return prefs.getBoolean(routeKey, true)
-    }
-
-    private fun routeKey(pickup: String, dropoff: String): String? {
-        val p = normalizeLocation(pickup)
-        val d = normalizeLocation(dropoff)
-
-        return when {
-            isPair(p, d, "gen trias", "gen trias") -> "Gen Trias ↔ Gen Trias"
-            isPair(p, d, "gen trias", "tanza") -> "Gen Trias ↔ Tanza"
-            isPair(p, d, "gen trias", "dasmarinas") -> "Gen Trias ↔ Dasmarinas"
-            isPair(p, d, "gen trias", "imus") -> "Gen Trias ↔ Imus"
-            isPair(p, d, "gen trias", "kawit") -> "Gen Trias ↔ Kawit"
-            isPair(p, d, "gen trias", "noveleta") -> "Gen Trias ↔ Noveleta"
-            isPair(p, d, "gen trias", "bacoor") -> "Gen Trias ↔ Bacoor"
-            isPair(p, d, "gen trias", "trece martires") -> "Gen Trias ↔ Trece Martires"
-            isPair(p, d, "gen trias", "naic") -> "Gen Trias ↔ Naic"
-            isPair(p, d, "gen trias", "tagaytay") -> "Gen Trias ↔ Tagaytay"
-            else -> null
-        }
-    }
-
-    private fun isPair(a: String, b: String, x: String, y: String): Boolean {
-        return (a == x && b == y) || (a == y && b == x)
+        return allowedPlaces.contains(p) && allowedPlaces.contains(d)
     }
 
     private fun normalizeLocation(location: String): String {
@@ -146,7 +133,12 @@ class BookingNotificationListener : NotificationListenerService() {
 
     private fun speakNow(text: String) {
         if (ttsReady) {
-            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "booking_alert")
+            tts?.speak(
+                text,
+                TextToSpeech.QUEUE_FLUSH,
+                null,
+                "booking_alert"
+            )
         }
     }
 
