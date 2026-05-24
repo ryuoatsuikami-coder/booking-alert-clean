@@ -20,12 +20,11 @@ class BookingNotificationListener : NotificationListenerService() {
 
     override fun onCreate() {
         super.onCreate()
-
         tts = TextToSpeech(applicationContext) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 ttsReady = true
                 tts?.language = Locale.ENGLISH
-                tts?.setSpeechRate(1.7f)
+                tts?.setSpeechRate(1.05f)
                 tts?.setPitch(1.0f)
             }
         }
@@ -43,20 +42,17 @@ class BookingNotificationListener : NotificationListenerService() {
         val fare = extractFare(fullText)
         if (fare == null || fare < 200) return
 
-        val route = extractRoute(fullText)
+        val route = extractRoute(fullText) ?: return
+        if (!isAllowedRoute(route.first, route.second)) return
 
-        val speechText = if (route != null) {
-            "${route.first} to ${route.second}. ${fare.toInt()} pesos."
-        } else {
-            "Booking. ${fare.toInt()} pesos."
-        }
+        val speechText = "${route.first} to ${route.second}. ${fare.toInt()} pesos."
 
         vibrateAlert()
         speakNow(speechText)
 
         Handler(Looper.getMainLooper()).postDelayed({
             openLalamove(sbn)
-        }, 1800)
+        }, 2200)
     }
 
     private fun extractFare(text: String): Double? {
@@ -76,20 +72,55 @@ class BookingNotificationListener : NotificationListenerService() {
         val parts = cleaned.split(">").map { it.trim() }
 
         return if (parts.size >= 2) {
-            Pair(parts[0].take(35), parts[1].take(35))
+            Pair(parts[0].take(40), parts[1].take(40))
         } else {
             null
         }
     }
 
+    private fun isAllowedRoute(pickup: String, dropoff: String): Boolean {
+        val p = normalizeLocation(pickup)
+        val d = normalizeLocation(dropoff)
+
+        val allowed = listOf(
+            "gen trias",
+            "tanza",
+            "dasmarinas",
+            "imus",
+            "kawit",
+            "noveleta"
+        )
+
+        return allowed.contains(p) &&
+               allowed.contains(d) &&
+               (p == "gen trias" || d == "gen trias")
+    }
+
+    private fun normalizeLocation(location: String): String {
+        val l = location.lowercase()
+
+        return when {
+            l.contains("general trias") ||
+            l.contains("gen trias") ||
+            l.contains("gen. trias") -> "gen trias"
+
+            l.contains("tanza") -> "tanza"
+
+            l.contains("dasmarinas") ||
+            l.contains("dasmariñas") ||
+            l.contains("dasma") -> "dasmarinas"
+
+            l.contains("imus") -> "imus"
+            l.contains("kawit") -> "kawit"
+            l.contains("noveleta") -> "noveleta"
+
+            else -> l
+        }
+    }
+
     private fun speakNow(text: String) {
         if (ttsReady) {
-            tts?.speak(
-                text,
-                TextToSpeech.QUEUE_FLUSH,
-                null,
-                "booking_alert"
-            )
+            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "booking_alert")
         }
     }
 
