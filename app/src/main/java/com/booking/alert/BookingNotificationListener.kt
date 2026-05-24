@@ -33,7 +33,7 @@ class BookingNotificationListener : NotificationListenerService() {
         val hasDropoff = dropoffKeywords.any { content.contains(it) }
         val fare = extractFare(content)
 
-        if (hasPickup && hasDropoff && fare >= 300) {
+        if (hasPickup && hasDropoff && fare >= 200) {
             alertDriver()
         }
     }
