@@ -47,7 +47,7 @@ class BookingNotificationListener : NotificationListenerService() {
         if (fare == null || fare < minFare) return
 
         val route = extractRoute(fullText) ?: return
-        if (!isSelectedRoute(route.first, route.second)) return
+        if (!isPreferredLocation(route.first) || !isPreferredLocation(route.second)) return
 
         val speechText = "${route.first} to ${route.second}. ${fare.toInt()} pesos."
 
@@ -82,63 +82,25 @@ class BookingNotificationListener : NotificationListenerService() {
         }
     }
 
-    private fun isSelectedRoute(pickup: String, dropoff: String): Boolean {
-        val p = normalizeLocation(pickup)
-        val d = normalizeLocation(dropoff)
+    private fun isPreferredLocation(locationText: String): Boolean {
+        val prefs = getSharedPreferences("booking_prefs", MODE_PRIVATE)
+        val locations = prefs.getStringSet("locations", emptySet()) ?: emptySet()
 
-        val allowedPlaces = listOf(
-            "gen trias",
-            "tanza",
-            "dasmarinas",
-            "imus",
-            "kawit",
-            "noveleta",
-            "bacoor",
-            "trece martires",
-            "naic",
-            "tagaytay"
-        )
+        val text = locationText.lowercase()
 
-        return allowedPlaces.contains(p) && allowedPlaces.contains(d)
-    }
-
-    private fun normalizeLocation(location: String): String {
-        val l = location.lowercase()
-
-        return when {
-            l.contains("general trias") ||
-            l.contains("gen trias") ||
-            l.contains("gen. trias") -> "gen trias"
-
-            l.contains("tanza") -> "tanza"
-
-            l.contains("dasmarinas") ||
-            l.contains("dasmariñas") ||
-            l.contains("dasma") -> "dasmarinas"
-
-            l.contains("imus") -> "imus"
-            l.contains("kawit") -> "kawit"
-            l.contains("noveleta") -> "noveleta"
-            l.contains("bacoor") -> "bacoor"
-
-            l.contains("trece martires") ||
-            l.contains("trece") -> "trece martires"
-
-            l.contains("naic") -> "naic"
-            l.contains("tagaytay") -> "tagaytay"
-
-            else -> l
+        for (location in locations) {
+            val enabled = prefs.getBoolean("loc_$location", true)
+            if (enabled && text.contains(location.lowercase())) {
+                return true
+            }
         }
+
+        return false
     }
 
     private fun speakNow(text: String) {
         if (ttsReady) {
-            tts?.speak(
-                text,
-                TextToSpeech.QUEUE_FLUSH,
-                null,
-                "booking_alert"
-            )
+            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "booking_alert")
         }
     }
 
@@ -146,12 +108,7 @@ class BookingNotificationListener : NotificationListenerService() {
         val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator.vibrate(
-                VibrationEffect.createOneShot(
-                    500,
-                    VibrationEffect.DEFAULT_AMPLITUDE
-                )
-            )
+            vibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
         } else {
             vibrator.vibrate(500)
         }
