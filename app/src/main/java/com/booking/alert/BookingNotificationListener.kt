@@ -4,6 +4,8 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.service.notification.NotificationListenerService
@@ -11,50 +13,49 @@ import android.service.notification.StatusBarNotification
 import android.speech.tts.TextToSpeech
 import java.util.Locale
 
-class BookingNotificationListener : NotificationListenerService(), TextToSpeech.OnInitListener {
+class BookingNotificationListener : NotificationListenerService() {
 
     private var tts: TextToSpeech? = null
-    private var pendingSpeakText: String? = null
+    private var ttsReady = false
 
     override fun onCreate() {
         super.onCreate()
-        tts = TextToSpeech(this, this)
-    }
 
-    override fun onInit(status: Int) {
-        if (status == TextToSpeech.SUCCESS) {
-            tts?.language = Locale.ENGLISH
-            tts?.setSpeechRate(1.35f)
-            pendingSpeakText?.let {
-                speakBrief(it)
-                pendingSpeakText = null
+        tts = TextToSpeech(applicationContext) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                ttsReady = true
+                tts?.language = Locale.ENGLISH
+                tts?.setSpeechRate(1.6f)
+                tts?.setPitch(1.0f)
             }
         }
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val packageNameText = sbn.packageName ?: ""
+        if (!packageNameText.lowercase().contains("lalamove")) return
+
         val title = sbn.notification.extras.getString("android.title") ?: ""
         val text = sbn.notification.extras.getCharSequence("android.text")?.toString() ?: ""
         val bigText = sbn.notification.extras.getCharSequence("android.bigText")?.toString() ?: ""
         val fullText = "$title $text $bigText"
 
-        if (packageNameText.lowercase().contains("lalamove")) {
-            val fare = extractFare(fullText)
+        val fare = extractFare(fullText)
+        if (fare == null || fare < 200) return
 
-            if (fare != null && fare >= 200) {
-                val route = extractRoute(fullText)
-                val speakText = if (route != null) {
-                    "${route.first} to ${route.second}, fare ${fare.toInt()} pesos"
-                } else {
-                    "Lalamove booking, fare ${fare.toInt()} pesos"
-                }
-
-                vibrateAlert()
-                speakBrief(speakText)
-                openLalamove(sbn)
-            }
+        val route = extractRoute(fullText)
+        val speakText = if (route != null) {
+            "${route.first} to ${route.second}. ${fare.toInt()} pesos."
+        } else {
+            "Booking. ${fare.toInt()} pesos."
         }
+
+        vibrateAlert()
+        speakNow(speakText)
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            openLalamove(sbn)
+        }, 1500)
     }
 
     private fun extractFare(text: String): Double? {
@@ -73,24 +74,17 @@ class BookingNotificationListener : NotificationListenerService(), TextToSpeech.
 
         val parts = cleaned.split(">").map { it.trim() }
 
-        if (parts.size >= 2) {
-            val pickup = parts[0].take(25)
-            val dropoff = parts[1].take(25)
-            return Pair(pickup, dropoff)
+        return if (parts.size >= 2) {
+            Pair(parts[0].take(30), parts[1].take(30))
+        } else {
+            null
         }
-
-        return null
     }
 
-    private fun speakBrief(text: String) {
-        val engine = tts
-
-        if (engine == null) {
-            pendingSpeakText = text
-            return
+    private fun speakNow(text: String) {
+        if (ttsReady) {
+            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "booking_alert")
         }
-
-        engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "booking_alert")
     }
 
     private fun vibrateAlert() {
