@@ -1,35 +1,16 @@
 package com.booking.alert
 
-import android.app.PendingIntent
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
-import android.content.Intent
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
-import android.speech.tts.TextToSpeech
-import java.util.Locale
+import androidx.core.app.NotificationCompat
 
 class BookingNotificationListener : NotificationListenerService() {
-
-    private var tts: TextToSpeech? = null
-    private var ttsReady = false
-
-    override fun onCreate() {
-        super.onCreate()
-
-        tts = TextToSpeech(applicationContext) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                ttsReady = true
-                tts?.language = Locale.ENGLISH
-                tts?.setSpeechRate(1.6f)
-                tts?.setPitch(1.0f)
-            }
-        }
-    }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val packageNameText = sbn.packageName ?: ""
@@ -44,18 +25,14 @@ class BookingNotificationListener : NotificationListenerService() {
         if (fare == null || fare < 200) return
 
         val route = extractRoute(fullText)
-        val speakText = if (route != null) {
+        val message = if (route != null) {
             "${route.first} to ${route.second}. ${fare.toInt()} pesos."
         } else {
-            "Booking. ${fare.toInt()} pesos."
+            "Lalamove booking. ${fare.toInt()} pesos."
         }
 
         vibrateAlert()
-        speakNow(speakText)
-
-        Handler(Looper.getMainLooper()).postDelayed({
-            openLalamove(sbn)
-        }, 1500)
+        showAlertNotification(message)
     }
 
     private fun extractFare(text: String): Double? {
@@ -81,39 +58,36 @@ class BookingNotificationListener : NotificationListenerService() {
         }
     }
 
-    private fun speakNow(text: String) {
-        if (ttsReady) {
-            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "booking_alert")
-        }
-    }
-
     private fun vibrateAlert() {
         val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator.vibrate(VibrationEffect.createOneShot(600, VibrationEffect.DEFAULT_AMPLITUDE))
+        } else {
+            vibrator.vibrate(600)
+        }
+    }
+
+    private fun showAlertNotification(message: String) {
+        val channelId = "booking_alert_channel"
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
-        } else {
-            vibrator.vibrate(500)
+            val channel = NotificationChannel(
+                channelId,
+                "Booking Alert",
+                NotificationManager.IMPORTANCE_HIGH
+            )
+            manager.createNotificationChannel(channel)
         }
-    }
 
-    private fun openLalamove(sbn: StatusBarNotification) {
-        try {
-            val pendingIntent: PendingIntent? = sbn.notification.contentIntent
-            pendingIntent?.send()
-        } catch (e: Exception) {
-            try {
-                val launchIntent: Intent? = packageManager.getLaunchIntentForPackage(sbn.packageName)
-                launchIntent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                startActivity(launchIntent)
-            } catch (_: Exception) {
-            }
-        }
-    }
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("Preferred Booking")
+            .setContentText(message)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
 
-    override fun onDestroy() {
-        tts?.stop()
-        tts?.shutdown()
-        super.onDestroy()
+        manager.notify(1001, notification)
     }
 }
