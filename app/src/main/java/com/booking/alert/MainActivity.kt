@@ -13,13 +13,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     private var ready = false
 
-    private val locations = listOf(
+    private val defaultLocations = listOf(
         "General Trias", "Tanza", "Dasmarinas", "Imus", "Kawit",
         "Noveleta", "Bacoor", "Trece Martires", "Naic", "Tagaytay"
     )
-
-    private val locationBoxes = mutableListOf<CheckBox>()
-    private val routeBoxes = mutableListOf<CheckBox>()
 
     private val speakReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -30,9 +27,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         tts = TextToSpeech(this, this)
+
         val prefs = getSharedPreferences("booking_prefs", MODE_PRIVATE)
+        val savedLocations = prefs.getStringSet("locations", defaultLocations.toSet())!!.toMutableSet()
 
         val scroll = ScrollView(this)
         val layout = LinearLayout(this)
@@ -44,74 +42,89 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         title.textSize = 26f
         layout.addView(title)
 
-        val locTitle = TextView(this)
-        locTitle.text = "Preferred Locations"
-        locTitle.textSize = 18f
-        layout.addView(locTitle)
+        val fareInput = EditText(this)
+        fareInput.hint = "Minimum fare, example 200"
+        fareInput.setText(prefs.getInt("min_fare", 200).toString())
+        fareInput.inputType = android.text.InputType.TYPE_CLASS_NUMBER
+        layout.addView(fareInput)
 
-        locations.forEach { location ->
-            val cb = CheckBox(this)
-            cb.text = location
-            cb.textSize = 16f
-            cb.isChecked = prefs.getBoolean("loc_$location", true)
-            locationBoxes.add(cb)
-            layout.addView(cb)
-        }
+        val addInput = EditText(this)
+        addInput.hint = "Add place, example Silang"
+        layout.addView(addInput)
 
-        val routeTitle = TextView(this)
-        routeTitle.text = "Preferred Routes"
-        routeTitle.textSize = 18f
-        routeTitle.setPadding(0, 25, 0, 0)
-        layout.addView(routeTitle)
+        val addBtn = Button(this)
+        addBtn.text = "Add Place"
+        layout.addView(addBtn)
 
-        val routes = mutableListOf<String>()
-        for (i in locations.indices) {
-            for (j in i until locations.size) {
-                routes.add("${locations[i]} ↔ ${locations[j]}")
+        val placeTitle = TextView(this)
+        placeTitle.text = "Selected Places"
+        placeTitle.textSize = 18f
+        layout.addView(placeTitle)
+
+        val boxContainer = LinearLayout(this)
+        boxContainer.orientation = LinearLayout.VERTICAL
+        layout.addView(boxContainer)
+
+        fun renderPlaces() {
+            boxContainer.removeAllViews()
+            savedLocations.sorted().forEach { place ->
+                val cb = CheckBox(this)
+                cb.text = place
+                cb.textSize = 16f
+                cb.isChecked = prefs.getBoolean("loc_$place", true)
+                boxContainer.addView(cb)
             }
         }
 
-        routes.forEach { route ->
-            val cb = CheckBox(this)
-            cb.text = route
-            cb.textSize = 15f
-            cb.isChecked = prefs.getBoolean("route_$route", true)
-            routeBoxes.add(cb)
-            layout.addView(cb)
+        renderPlaces()
+
+        addBtn.setOnClickListener {
+            val newPlace = addInput.text.toString().trim()
+            if (newPlace.isNotEmpty()) {
+                savedLocations.add(newPlace)
+                prefs.edit()
+                    .putStringSet("locations", savedLocations)
+                    .putBoolean("loc_$newPlace", true)
+                    .apply()
+                addInput.setText("")
+                renderPlaces()
+                Toast.makeText(this, "Place added", Toast.LENGTH_SHORT).show()
+            }
         }
 
-        val btnSave = Button(this)
-        btnSave.text = "Save Settings"
-        btnSave.setOnClickListener {
+        val saveBtn = Button(this)
+        saveBtn.text = "Save Settings"
+        layout.addView(saveBtn)
+
+        val notifBtn = Button(this)
+        notifBtn.text = "Open Notification Access"
+        layout.addView(notifBtn)
+
+        val testBtn = Button(this)
+        testBtn.text = "Test Voice"
+        layout.addView(testBtn)
+
+        saveBtn.setOnClickListener {
             val editor = prefs.edit()
+            editor.putInt("min_fare", fareInput.text.toString().toIntOrNull() ?: 200)
+            editor.putStringSet("locations", savedLocations)
 
-            locationBoxes.forEach {
-                editor.putBoolean("loc_${it.text}", it.isChecked)
-            }
-
-            routeBoxes.forEach {
-                editor.putBoolean("route_${it.text}", it.isChecked)
+            for (i in 0 until boxContainer.childCount) {
+                val cb = boxContainer.getChildAt(i) as CheckBox
+                editor.putBoolean("loc_${cb.text}", cb.isChecked)
             }
 
             editor.apply()
             Toast.makeText(this, "Settings saved", Toast.LENGTH_SHORT).show()
         }
 
-        val btnNotif = Button(this)
-        btnNotif.text = "Open Notification Access"
-        btnNotif.setOnClickListener {
+        notifBtn.setOnClickListener {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
 
-        val btnTest = Button(this)
-        btnTest.text = "Test Voice"
-        btnTest.setOnClickListener {
+        testBtn.setOnClickListener {
             speakNow("Booking. General Trias to Dasmarinas. Fare 250 pesos.")
         }
-
-        layout.addView(btnSave)
-        layout.addView(btnNotif)
-        layout.addView(btnTest)
 
         scroll.addView(layout)
         setContentView(scroll)
@@ -133,7 +146,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             Handler(Looper.getMainLooper()).postDelayed({ speakNow(text) }, 700)
             return
         }
-
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "booking_alert_voice")
     }
 
