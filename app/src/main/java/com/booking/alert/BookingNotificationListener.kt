@@ -18,14 +18,16 @@ class BookingNotificationListener : NotificationListenerService() {
     )
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        if (!sbn.packageName.lowercase().contains("lalamove")) return
+        val packageNameText = sbn.packageName ?: return
+        if (!packageNameText.lowercase().contains("lalamove")) return
 
         val extras = sbn.notification.extras
-        val content = (
-            extras.getString(Notification.EXTRA_TITLE).orEmpty() + " " +
-            extras.getCharSequence(Notification.EXTRA_TEXT).orEmpty() + " " +
-            extras.getCharSequence(Notification.EXTRA_BIG_TEXT).orEmpty()
-        ).lowercase()
+
+        val title = extras.getString(Notification.EXTRA_TITLE).orEmpty()
+        val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
+        val bigText = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString().orEmpty()
+
+        val content = "$title $text $bigText".lowercase()
 
         val hasPickup = pickupKeywords.any { content.contains(it) }
         val hasDropoff = dropoffKeywords.any { content.contains(it) }
@@ -47,6 +49,7 @@ class BookingNotificationListener : NotificationListenerService() {
         vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 700, 300, 1000), -1))
 
         val sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-        RingtoneManager.getRingtone(applicationContext, sound).play()
+        val ringtone = RingtoneManager.getRingtone(applicationContext, sound)
+        ringtone.play()
     }
 }
