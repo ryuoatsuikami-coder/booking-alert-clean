@@ -31,7 +31,7 @@ class BookingNotificationListener : NotificationListenerService() {
         val matchedRoute = matchPreferredRoute(route.first, route.second) ?: return
 
         val speechText =
-            "Preferred booking. ${matchedRoute.first} to ${matchedRoute.second}. Fare $fare pesos."
+            "Take. ${matchedRoute.first} to ${matchedRoute.second}. Fare $fare pesos."
 
         vibrate()
         speakWithVoiceService(speechText)
