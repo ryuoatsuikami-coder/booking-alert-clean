@@ -25,27 +25,19 @@ class BookingNotificationListener : NotificationListenerService() {
         if (fare < minFare) return
 
         val route = extractRoute(fullText) ?: return
-        val matchedRoute = getPreferredRoute(route.first, route.second) ?: return
+        if (!isPreferredRoute(route.first, route.second)) return
 
-        val speechText = "${matchedRoute.first} to ${matchedRoute.second}. Fare $fare pesos."
+        val speechText = "${route.first} to ${route.second}. Fare $fare pesos."
 
         vibrate()
-        openBookingAlertAndSpeak(speechText)
+
+        val voiceIntent = Intent(this, BookingVoiceService::class.java)
+        voiceIntent.putExtra("speak_text", speechText)
+        startService(voiceIntent)
 
         Handler(Looper.getMainLooper()).postDelayed({
             openLalamove(sbn)
-        }, 3000)
-    }
-
-    private fun openBookingAlertAndSpeak(text: String) {
-        val intent = Intent(this, MainActivity::class.java)
-        intent.addFlags(
-            Intent.FLAG_ACTIVITY_NEW_TASK or
-            Intent.FLAG_ACTIVITY_CLEAR_TOP or
-            Intent.FLAG_ACTIVITY_SINGLE_TOP
-        )
-        intent.putExtra("speak_text", text)
-        startActivity(intent)
+        }, 2500)
     }
 
     private fun extractFare(text: String): Int {
@@ -68,36 +60,41 @@ class BookingNotificationListener : NotificationListenerService() {
         return Pair(parts[0], parts[1])
     }
 
-    private fun getPreferredRoute(pickupText: String, dropoffText: String): Pair<String, String>? {
+    private fun isPreferredRoute(pickupText: String, dropoffText: String): Boolean {
         val prefs = getSharedPreferences("booking_prefs", MODE_PRIVATE)
-        val locations = prefs.getStringSet("locations", emptySet()) ?: emptySet()
+        val routes = prefs.getStringSet("routes", emptySet()) ?: emptySet()
 
-        val pickupPlace = locations.firstOrNull {
-            prefs.getBoolean("loc_$it", true) &&
-            pickupText.lowercase().contains(it.lowercase())
-        } ?: return null
+        val pickupLower = pickupText.lowercase()
+        val dropoffLower = dropoffText.lowercase()
 
-        val dropoffPlace = locations.firstOrNull {
-            prefs.getBoolean("loc_$it", true) &&
-            dropoffText.lowercase().contains(it.lowercase())
-        } ?: return null
+        for (route in routes) {
+            val enabled = prefs.getBoolean("route_$route", true)
+            if (!enabled) continue
 
-        val route1 = "$pickupPlace ↔ $dropoffPlace"
-        val route2 = "$dropoffPlace ↔ $pickupPlace"
+            val parts = route.split(">").map { it.trim() }
+            if (parts.size < 2) continue
 
-        val routeAllowed =
-            prefs.getBoolean("route_$route1", true) ||
-            prefs.getBoolean("route_$route2", true)
+            val pickupRoute = parts[0].lowercase()
+            val dropoffRoute = parts[1].lowercase()
 
-        if (!routeAllowed) return null
+            if (pickupLower.contains(pickupRoute) && dropoffLower.contains(dropoffRoute)) {
+                return true
+            }
+        }
 
-        return Pair(pickupPlace, dropoffPlace)
+        return false
     }
 
     private fun vibrate() {
         val vibrator = getSystemService(VIBRATOR_SERVICE) as Vibrator
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 300, 150, 300), -1))
+            vibrator.vibrate(
+                VibrationEffect.createWaveform(
+                    longArrayOf(0, 300, 150, 300),
+                    -1
+                )
+            )
         } else {
             vibrator.vibrate(longArrayOf(0, 300, 150, 300), -1)
         }
@@ -109,8 +106,23 @@ class BookingNotificationListener : NotificationListenerService() {
             return
         } catch (_: Exception) {}
 
-        val launchIntent = packageManager.getLaunchIntentForPackage(sbn.packageName)
-        launchIntent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        if (launchIntent != null) startActivity(launchIntent)
+        val packages = listOf(
+            sbn.packageName,
+            "com.lalamove.huolala.driver",
+            "com.lalamove.client.driver",
+            "com.lalamove.global.driver",
+            "com.lalamove.driver"
+        )
+
+        for (pkg in packages) {
+            try {
+                val launchIntent = packageManager.getLaunchIntentForPackage(pkg)
+                if (launchIntent != null) {
+                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(launchIntent)
+                    return
+                }
+            } catch (_: Exception) {}
+        }
     }
 }
