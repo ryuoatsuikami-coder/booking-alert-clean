@@ -25,16 +25,16 @@ class BookingNotificationListener : NotificationListenerService() {
         if (fare < minFare) return
 
         val route = extractRoute(fullText) ?: return
-        if (!isPreferred(route.first) || !isPreferred(route.second)) return
+        val matchedRoute = getPreferredRoute(route.first, route.second) ?: return
 
-        val speechText = "${route.first} to ${route.second}. Fare $fare pesos."
+        val speechText = "${matchedRoute.first} to ${matchedRoute.second}. Fare $fare pesos."
 
         vibrate()
         openBookingAlertAndSpeak(speechText)
 
         Handler(Looper.getMainLooper()).postDelayed({
             openLalamove(sbn)
-        }, 2800)
+        }, 3000)
     }
 
     private fun openBookingAlertAndSpeak(text: String) {
@@ -65,20 +65,33 @@ class BookingNotificationListener : NotificationListenerService() {
         val parts = cleaned.split(">").map { it.trim() }
         if (parts.size < 2) return null
 
-        return Pair(parts[0].take(45), parts[1].take(45))
+        return Pair(parts[0], parts[1])
     }
 
-    private fun isPreferred(locationText: String): Boolean {
+    private fun getPreferredRoute(pickupText: String, dropoffText: String): Pair<String, String>? {
         val prefs = getSharedPreferences("booking_prefs", MODE_PRIVATE)
         val locations = prefs.getStringSet("locations", emptySet()) ?: emptySet()
-        val text = locationText.lowercase()
 
-        for (place in locations) {
-            val enabled = prefs.getBoolean("loc_$place", true)
-            if (enabled && text.contains(place.lowercase())) return true
-        }
+        val pickupPlace = locations.firstOrNull {
+            prefs.getBoolean("loc_$it", true) &&
+            pickupText.lowercase().contains(it.lowercase())
+        } ?: return null
 
-        return false
+        val dropoffPlace = locations.firstOrNull {
+            prefs.getBoolean("loc_$it", true) &&
+            dropoffText.lowercase().contains(it.lowercase())
+        } ?: return null
+
+        val route1 = "$pickupPlace ↔ $dropoffPlace"
+        val route2 = "$dropoffPlace ↔ $pickupPlace"
+
+        val routeAllowed =
+            prefs.getBoolean("route_$route1", true) ||
+            prefs.getBoolean("route_$route2", true)
+
+        if (!routeAllowed) return null
+
+        return Pair(pickupPlace, dropoffPlace)
     }
 
     private fun vibrate() {
