@@ -12,7 +12,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private var tts: TextToSpeech? = null
     private var ready = false
-    private var pendingSpeak: String? = null
 
     private val defaultLocations = listOf(
         "General Trias", "Tanza", "Dasmarinas", "Imus", "Kawit",
@@ -22,26 +21,14 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         tts = TextToSpeech(this, this)
+        startService(Intent(this, BookingVoiceService::class.java))
         buildUi()
-        handleIntent(intent)
-    }
-
-    override fun onNewIntent(intent: Intent?) {
-        super.onNewIntent(intent)
-        if (intent != null) handleIntent(intent)
-    }
-
-    private fun handleIntent(intent: Intent) {
-        val text = intent.getStringExtra("speak_text")
-        if (!text.isNullOrBlank()) {
-            pendingSpeak = text
-            speakNow(text)
-        }
     }
 
     private fun buildUi() {
         val prefs = getSharedPreferences("booking_prefs", MODE_PRIVATE)
         val savedLocations = prefs.getStringSet("locations", defaultLocations.toSet())!!.toMutableSet()
+        val savedRoutes = prefs.getStringSet("routes", emptySet())!!.toMutableSet()
 
         val scroll = ScrollView(this)
         val layout = LinearLayout(this)
@@ -59,13 +46,21 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         fareInput.inputType = android.text.InputType.TYPE_CLASS_NUMBER
         layout.addView(fareInput)
 
-        val addInput = EditText(this)
-        addInput.hint = "Add place, example Silang"
-        layout.addView(addInput)
+        val addPlaceInput = EditText(this)
+        addPlaceInput.hint = "Add place, example Silang"
+        layout.addView(addPlaceInput)
 
-        val addBtn = Button(this)
-        addBtn.text = "Add Place"
-        layout.addView(addBtn)
+        val addPlaceBtn = Button(this)
+        addPlaceBtn.text = "Add Place"
+        layout.addView(addPlaceBtn)
+
+        val addRouteInput = EditText(this)
+        addRouteInput.hint = "Add route, example General Trias > Silang"
+        layout.addView(addRouteInput)
+
+        val addRouteBtn = Button(this)
+        addRouteBtn.text = "Add Route"
+        layout.addView(addRouteBtn)
 
         val placeTitle = TextView(this)
         placeTitle.text = "Preferred Places"
@@ -98,31 +93,53 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 placeContainer.addView(cb)
             }
 
+            savedRoutes.sorted().forEach { route ->
+                val cb = CheckBox(this)
+                cb.text = route
+                cb.textSize = 15f
+                cb.isChecked = prefs.getBoolean("route_$route", true)
+                routeContainer.addView(cb)
+            }
+        }
+
+        if (savedRoutes.isEmpty()) {
             val list = savedLocations.sorted()
             for (i in list.indices) {
                 for (j in i until list.size) {
-                    val route = "${list[i]} ↔ ${list[j]}"
-                    val cb = CheckBox(this)
-                    cb.text = route
-                    cb.textSize = 15f
-                    cb.isChecked = prefs.getBoolean("route_$route", true)
-                    routeContainer.addView(cb)
+                    savedRoutes.add("${list[i]} > ${list[j]}")
+                    savedRoutes.add("${list[j]} > ${list[i]}")
                 }
             }
+            prefs.edit().putStringSet("routes", savedRoutes).apply()
         }
 
         renderAll()
 
-        addBtn.setOnClickListener {
-            val newPlace = addInput.text.toString().trim()
+        addPlaceBtn.setOnClickListener {
+            val newPlace = addPlaceInput.text.toString().trim()
             if (newPlace.isNotEmpty()) {
                 savedLocations.add(newPlace)
                 prefs.edit()
                     .putStringSet("locations", savedLocations)
                     .putBoolean("loc_$newPlace", true)
                     .apply()
-                addInput.setText("")
+                addPlaceInput.setText("")
                 renderAll()
+            }
+        }
+
+        addRouteBtn.setOnClickListener {
+            val route = addRouteInput.text.toString().trim()
+            if (route.contains(">")) {
+                savedRoutes.add(route)
+                prefs.edit()
+                    .putStringSet("routes", savedRoutes)
+                    .putBoolean("route_$route", true)
+                    .apply()
+                addRouteInput.setText("")
+                renderAll()
+            } else {
+                Toast.makeText(this, "Use format: Pickup > Dropoff", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -142,6 +159,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             val editor = prefs.edit()
             editor.putInt("min_fare", fareInput.text.toString().toIntOrNull() ?: 200)
             editor.putStringSet("locations", savedLocations)
+            editor.putStringSet("routes", savedRoutes)
 
             for (i in 0 until placeContainer.childCount) {
                 val cb = placeContainer.getChildAt(i) as CheckBox
@@ -162,7 +180,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
 
         testBtn.setOnClickListener {
-            speakNow("Booking. General Trias to Dasmarinas. Fare 250 pesos.")
+            val intent = Intent(this, BookingVoiceService::class.java)
+            intent.putExtra("speak_text", "Booking. General Trias to Dasmarinas. Fare 250 pesos.")
+            startService(intent)
         }
 
         scroll.addView(layout)
@@ -171,29 +191,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
-            tts?.language = Locale("en", "PH")
-            tts?.setSpeechRate(1.0f)
-            tts?.setPitch(1.0f)
             ready = true
-
-            pendingSpeak?.let {
-                speakNow(it)
-                pendingSpeak = null
-            }
         }
-    }
-
-    private fun speakNow(text: String) {
-        if (!ready) {
-            pendingSpeak = text
-            return
-        }
-
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "booking_alert_voice")
     }
 
     override fun onDestroy() {
-        tts?.stop()
         tts?.shutdown()
         super.onDestroy()
     }
