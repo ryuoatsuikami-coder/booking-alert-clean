@@ -16,7 +16,10 @@ class BookingNotificationListener : NotificationListenerService() {
         val title = extras.getString(Notification.EXTRA_TITLE) ?: ""
         val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
         val bigText = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString() ?: ""
-        val fullText = "$title $text $bigText"
+        val subText = extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString() ?: ""
+
+        val fullText = "$title $text $bigText $subText".trim()
+        if (fullText.isBlank()) return
 
         val prefs = getSharedPreferences("booking_prefs", MODE_PRIVATE)
         val minFare = prefs.getInt("min_fare", 200)
@@ -27,14 +30,11 @@ class BookingNotificationListener : NotificationListenerService() {
         val route = extractRoute(fullText) ?: return
         val matchedRoute = matchPreferredRoute(route.first, route.second) ?: return
 
-        val speechText = "${matchedRoute.first} to ${matchedRoute.second}. Fare $fare pesos."
+        val speechText =
+            "Pasok sa preferred route. ${matchedRoute.first} to ${matchedRoute.second}. Fare $fare pesos. Pwede itong i-consider."
 
         vibrate()
         speakWithVoiceService(speechText)
-
-        Handler(Looper.getMainLooper()).postDelayed({
-            openLalamove(sbn)
-        }, 800)
     }
 
     private fun speakWithVoiceService(text: String) {
@@ -52,8 +52,8 @@ class BookingNotificationListener : NotificationListenerService() {
         val prefs = getSharedPreferences("booking_prefs", MODE_PRIVATE)
         val routes = prefs.getStringSet("routes", emptySet()) ?: emptySet()
 
-        val pickupLower = pickupText.lowercase()
-        val dropoffLower = dropoffText.lowercase()
+        val pickupLower = normalize(pickupText)
+        val dropoffLower = normalize(dropoffText)
 
         for (route in routes) {
             val enabled = prefs.getBoolean("route_$route", true)
@@ -62,14 +62,17 @@ class BookingNotificationListener : NotificationListenerService() {
             val parts = route.split(">").map { it.trim() }
             if (parts.size < 2) continue
 
-            val pickupRoute = parts[0]
-            val dropoffRoute = parts[1]
+            val pickupRoute = normalize(parts[0])
+            val dropoffRoute = normalize(parts[1])
 
-            if (
-                pickupLower.contains(pickupRoute.lowercase()) &&
-                dropoffLower.contains(dropoffRoute.lowercase())
-            ) {
-                return Pair(pickupRoute, dropoffRoute)
+            val pickupMatched =
+                pickupLower.contains(pickupRoute) || pickupRoute.contains(pickupLower)
+
+            val dropoffMatched =
+                dropoffLower.contains(dropoffRoute) || dropoffRoute.contains(dropoffLower)
+
+            if (pickupMatched && dropoffMatched) {
+                return Pair(parts[0], parts[1])
             }
         }
 
@@ -77,9 +80,20 @@ class BookingNotificationListener : NotificationListenerService() {
     }
 
     private fun extractFare(text: String): Int {
-        val regex = Regex("""(?:₱|php|p)\s?([0-9,]+)(?:\.\d{1,2})?""", RegexOption.IGNORE_CASE)
-        val match = regex.find(text) ?: return 0
-        return match.groupValues[1].replace(",", "").toIntOrNull() ?: 0
+        val patterns = listOf(
+            Regex("""(?:₱|php|p)\s?([0-9,]+)(?:\.\d{1,2})?""", RegexOption.IGNORE_CASE),
+            Regex("""fare\s*(?:₱|php|p)?\s?([0-9,]+)""", RegexOption.IGNORE_CASE),
+            Regex("""([0-9,]+)\s*pesos""", RegexOption.IGNORE_CASE)
+        )
+
+        for (regex in patterns) {
+            val match = regex.find(text)
+            if (match != null) {
+                return match.groupValues[1].replace(",", "").toIntOrNull() ?: 0
+            }
+        }
+
+        return 0
     }
 
     private fun extractRoute(text: String): Pair<String, String>? {
@@ -87,13 +101,33 @@ class BookingNotificationListener : NotificationListenerService() {
             .replace("[Delivery]", "", ignoreCase = true)
             .replace("immediate", "", ignoreCase = true)
             .replace("Hurry up!", "", ignoreCase = true)
+            .replace("Pickup", "", ignoreCase = true)
+            .replace("Dropoff", "", ignoreCase = true)
+            .replace("Drop-off", "", ignoreCase = true)
             .replace(Regex("""(?:₱|php|p)\s?[0-9,]+(?:\.\d{1,2})?""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""fare\s*(?:₱|php|p)?\s?[0-9,]+""", RegexOption.IGNORE_CASE), "")
             .trim()
 
-        val parts = cleaned.split(">").map { it.trim() }
-        if (parts.size < 2) return null
+        val separators = listOf(">", " to ", " To ", " TO ", "→", "-")
 
-        return Pair(parts[0], parts[1])
+        for (separator in separators) {
+            val parts = cleaned.split(separator).map { it.trim() }.filter { it.isNotBlank() }
+            if (parts.size >= 2) {
+                return Pair(parts[0], parts[1])
+            }
+        }
+
+        return null
+    }
+
+    private fun normalize(value: String): String {
+        return value
+            .lowercase()
+            .replace(",", " ")
+            .replace(".", " ")
+            .replace("-", " ")
+            .replace("  ", " ")
+            .trim()
     }
 
     private fun vibrate() {
@@ -108,54 +142,6 @@ class BookingNotificationListener : NotificationListenerService() {
             )
         } else {
             vibrator.vibrate(longArrayOf(0, 300, 150, 300), -1)
-        }
-    }
-
-    private fun openLalamove(sbn: StatusBarNotification) {
-        // 1. Try clicking exact Lalamove notification
-        try {
-            val pendingIntent = sbn.notification.contentIntent
-            if (pendingIntent != null) {
-                pendingIntent.send()
-                return
-            }
-        } catch (_: Exception) {}
-
-        // 2. Try opening package from notification
-        try {
-            val launchIntent = packageManager.getLaunchIntentForPackage(sbn.packageName)
-            if (launchIntent != null) {
-                launchIntent.addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP
-                )
-                startActivity(launchIntent)
-                return
-            }
-        } catch (_: Exception) {}
-
-        // 3. Try known Lalamove driver package names
-        val packages = listOf(
-            "com.lalamove.huolala.driver",
-            "com.lalamove.client.driver",
-            "com.lalamove.global.driver",
-            "com.lalamove.driver"
-        )
-
-        for (pkg in packages) {
-            try {
-                val intent = packageManager.getLaunchIntentForPackage(pkg)
-                if (intent != null) {
-                    intent.addFlags(
-                        Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                        Intent.FLAG_ACTIVITY_SINGLE_TOP
-                    )
-                    startActivity(intent)
-                    return
-                }
-            } catch (_: Exception) {}
         }
     }
 }
