@@ -60,29 +60,58 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         layout.addView(fareInput)
 
         val addInput = EditText(this)
-        addInput.hint = "Add place"
+        addInput.hint = "Add place, example Silang"
         layout.addView(addInput)
 
         val addBtn = Button(this)
         addBtn.text = "Add Place"
         layout.addView(addBtn)
 
-        val boxContainer = LinearLayout(this)
-        boxContainer.orientation = LinearLayout.VERTICAL
-        layout.addView(boxContainer)
+        val placeTitle = TextView(this)
+        placeTitle.text = "Preferred Places"
+        placeTitle.textSize = 18f
+        layout.addView(placeTitle)
 
-        fun renderPlaces() {
-            boxContainer.removeAllViews()
+        val placeContainer = LinearLayout(this)
+        placeContainer.orientation = LinearLayout.VERTICAL
+        layout.addView(placeContainer)
+
+        val routeTitle = TextView(this)
+        routeTitle.text = "Preferred Routes"
+        routeTitle.textSize = 18f
+        routeTitle.setPadding(0, 25, 0, 0)
+        layout.addView(routeTitle)
+
+        val routeContainer = LinearLayout(this)
+        routeContainer.orientation = LinearLayout.VERTICAL
+        layout.addView(routeContainer)
+
+        fun renderAll() {
+            placeContainer.removeAllViews()
+            routeContainer.removeAllViews()
+
             savedLocations.sorted().forEach { place ->
                 val cb = CheckBox(this)
                 cb.text = place
                 cb.textSize = 16f
                 cb.isChecked = prefs.getBoolean("loc_$place", true)
-                boxContainer.addView(cb)
+                placeContainer.addView(cb)
+            }
+
+            val list = savedLocations.sorted()
+            for (i in list.indices) {
+                for (j in i until list.size) {
+                    val route = "${list[i]} ↔ ${list[j]}"
+                    val cb = CheckBox(this)
+                    cb.text = route
+                    cb.textSize = 15f
+                    cb.isChecked = prefs.getBoolean("route_$route", true)
+                    routeContainer.addView(cb)
+                }
             }
         }
 
-        renderPlaces()
+        renderAll()
 
         addBtn.setOnClickListener {
             val newPlace = addInput.text.toString().trim()
@@ -93,7 +122,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     .putBoolean("loc_$newPlace", true)
                     .apply()
                 addInput.setText("")
-                renderPlaces()
+                renderAll()
             }
         }
 
@@ -114,9 +143,14 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             editor.putInt("min_fare", fareInput.text.toString().toIntOrNull() ?: 200)
             editor.putStringSet("locations", savedLocations)
 
-            for (i in 0 until boxContainer.childCount) {
-                val cb = boxContainer.getChildAt(i) as CheckBox
+            for (i in 0 until placeContainer.childCount) {
+                val cb = placeContainer.getChildAt(i) as CheckBox
                 editor.putBoolean("loc_${cb.text}", cb.isChecked)
+            }
+
+            for (i in 0 until routeContainer.childCount) {
+                val cb = routeContainer.getChildAt(i) as CheckBox
+                editor.putBoolean("route_${cb.text}", cb.isChecked)
             }
 
             editor.apply()
