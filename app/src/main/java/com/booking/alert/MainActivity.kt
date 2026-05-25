@@ -15,20 +15,41 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private val defaultLocations = listOf(
         "General Trias", "Tanza", "Dasmarinas", "Imus", "Kawit",
-        "Noveleta", "Bacoor", "Trece Martires", "Naic", "Tagaytay"
+        "Noveleta", "Bacoor", "Trece Martires", "Naic", "Tagaytay",
+        "Manila", "Pasay", "Makati", "Paranaque", "Las Pinas", "Muntinlupa"
+    )
+
+    private val defaultRoutes = mutableSetOf(
+        "General Trias > Dasmarinas",
+        "General Trias > Imus",
+        "General Trias > Bacoor",
+        "Dasmarinas > Imus",
+        "Imus > Bacoor",
+        "Bacoor > Manila",
+        "Manila > Bacoor",
+        "Bacoor > Imus",
+        "Imus > Dasmarinas",
+        "Dasmarinas > General Trias"
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         tts = TextToSpeech(this, this)
-        startService(Intent(this, BookingVoiceService::class.java))
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(Intent(this, BookingVoiceService::class.java))
+        } else {
+            startService(Intent(this, BookingVoiceService::class.java))
+        }
+
         buildUi()
     }
 
     private fun buildUi() {
         val prefs = getSharedPreferences("booking_prefs", MODE_PRIVATE)
+
         val savedLocations = prefs.getStringSet("locations", defaultLocations.toSet())!!.toMutableSet()
-        val savedRoutes = prefs.getStringSet("routes", emptySet())!!.toMutableSet()
+        val savedRoutes = prefs.getStringSet("routes", defaultRoutes)!!.toMutableSet()
 
         val scroll = ScrollView(this)
         val layout = LinearLayout(this)
@@ -40,11 +61,33 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         title.textSize = 26f
         layout.addView(title)
 
+        val subtitle = TextView(this)
+        subtitle.text = "Only bookings matching your preferred routes will be spoken."
+        subtitle.textSize = 14f
+        layout.addView(subtitle)
+
+        val speakOnlyMatched = CheckBox(this)
+        speakOnlyMatched.text = "Speak only matched preferred-route bookings"
+        speakOnlyMatched.isChecked = prefs.getBoolean("speak_only_matched", true)
+        layout.addView(speakOnlyMatched)
+
         val fareInput = EditText(this)
         fareInput.hint = "Minimum fare"
         fareInput.setText(prefs.getInt("min_fare", 200).toString())
         fareInput.inputType = android.text.InputType.TYPE_CLASS_NUMBER
         layout.addView(fareInput)
+
+        val pickupInput = EditText(this)
+        pickupInput.hint = "Max pickup distance km, example 3"
+        pickupInput.setText(prefs.getFloat("max_pickup_km", 3f).toString())
+        pickupInput.inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+        layout.addView(pickupInput)
+
+        val detourInput = EditText(this)
+        detourInput.hint = "Max detour minutes, example 15"
+        detourInput.setText(prefs.getInt("max_detour_minutes", 15).toString())
+        detourInput.inputType = android.text.InputType.TYPE_CLASS_NUMBER
+        layout.addView(detourInput)
 
         val addPlaceInput = EditText(this)
         addPlaceInput.hint = "Add place, example Silang"
@@ -65,6 +108,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val placeTitle = TextView(this)
         placeTitle.text = "Preferred Places"
         placeTitle.textSize = 18f
+        placeTitle.setPadding(0, 25, 0, 0)
         layout.addView(placeTitle)
 
         val placeContainer = LinearLayout(this)
@@ -100,17 +144,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 cb.isChecked = prefs.getBoolean("route_$route", true)
                 routeContainer.addView(cb)
             }
-        }
-
-        if (savedRoutes.isEmpty()) {
-            val list = savedLocations.sorted()
-            for (i in list.indices) {
-                for (j in i until list.size) {
-                    savedRoutes.add("${list[i]} > ${list[j]}")
-                    savedRoutes.add("${list[j]} > ${list[i]}")
-                }
-            }
-            prefs.edit().putStringSet("routes", savedRoutes).apply()
         }
 
         renderAll()
@@ -152,12 +185,17 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         layout.addView(notifBtn)
 
         val testBtn = Button(this)
-        testBtn.text = "Test Voice"
+        testBtn.text = "Test Matched Voice"
         layout.addView(testBtn)
 
         saveBtn.setOnClickListener {
             val editor = prefs.edit()
+
+            editor.putBoolean("speak_only_matched", speakOnlyMatched.isChecked)
             editor.putInt("min_fare", fareInput.text.toString().toIntOrNull() ?: 200)
+            editor.putFloat("max_pickup_km", pickupInput.text.toString().toFloatOrNull() ?: 3f)
+            editor.putInt("max_detour_minutes", detourInput.text.toString().toIntOrNull() ?: 15)
+
             editor.putStringSet("locations", savedLocations)
             editor.putStringSet("routes", savedRoutes)
 
@@ -181,7 +219,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
         testBtn.setOnClickListener {
             val intent = Intent(this, BookingVoiceService::class.java)
-            intent.putExtra("speak_text", "Booking. General Trias to Dasmarinas. Fare 250 pesos.")
+            intent.putExtra(
+                "speak_text",
+                "Pasok sa preferred route. General Trias to Dasmarinas. Fare 250 pesos. Pwede itong i-consider."
+            )
             startService(intent)
         }
 
