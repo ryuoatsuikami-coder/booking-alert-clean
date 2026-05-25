@@ -12,23 +12,34 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private var tts: TextToSpeech? = null
     private var ready = false
+    private var pendingSpeak: String? = null
 
     private val defaultLocations = listOf(
         "General Trias", "Tanza", "Dasmarinas", "Imus", "Kawit",
         "Noveleta", "Bacoor", "Trece Martires", "Naic", "Tagaytay"
     )
 
-    private val speakReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            val text = intent?.getStringExtra("text") ?: return
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        tts = TextToSpeech(this, this)
+        buildUi()
+        handleIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        if (intent != null) handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent) {
+        val text = intent.getStringExtra("speak_text")
+        if (!text.isNullOrBlank()) {
+            pendingSpeak = text
             speakNow(text)
         }
     }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        tts = TextToSpeech(this, this)
-
+    private fun buildUi() {
         val prefs = getSharedPreferences("booking_prefs", MODE_PRIVATE)
         val savedLocations = prefs.getStringSet("locations", defaultLocations.toSet())!!.toMutableSet()
 
@@ -43,23 +54,18 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         layout.addView(title)
 
         val fareInput = EditText(this)
-        fareInput.hint = "Minimum fare, example 200"
+        fareInput.hint = "Minimum fare"
         fareInput.setText(prefs.getInt("min_fare", 200).toString())
         fareInput.inputType = android.text.InputType.TYPE_CLASS_NUMBER
         layout.addView(fareInput)
 
         val addInput = EditText(this)
-        addInput.hint = "Add place, example Silang"
+        addInput.hint = "Add place"
         layout.addView(addInput)
 
         val addBtn = Button(this)
         addBtn.text = "Add Place"
         layout.addView(addBtn)
-
-        val placeTitle = TextView(this)
-        placeTitle.text = "Selected Places"
-        placeTitle.textSize = 18f
-        layout.addView(placeTitle)
 
         val boxContainer = LinearLayout(this)
         boxContainer.orientation = LinearLayout.VERTICAL
@@ -88,7 +94,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                     .apply()
                 addInput.setText("")
                 renderPlaces()
-                Toast.makeText(this, "Place added", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -128,8 +133,6 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
         scroll.addView(layout)
         setContentView(scroll)
-
-        registerReceiver(speakReceiver, IntentFilter("com.booking.alert.SPEAK"))
     }
 
     override fun onInit(status: Int) {
@@ -138,19 +141,24 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             tts?.setSpeechRate(1.0f)
             tts?.setPitch(1.0f)
             ready = true
+
+            pendingSpeak?.let {
+                speakNow(it)
+                pendingSpeak = null
+            }
         }
     }
 
     private fun speakNow(text: String) {
         if (!ready) {
-            Handler(Looper.getMainLooper()).postDelayed({ speakNow(text) }, 700)
+            pendingSpeak = text
             return
         }
+
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "booking_alert_voice")
     }
 
     override fun onDestroy() {
-        unregisterReceiver(speakReceiver)
         tts?.stop()
         tts?.shutdown()
         super.onDestroy()
