@@ -33,8 +33,12 @@ class BookingNotificationListener : NotificationListenerService() {
         speakWithVoiceService(speechText)
 
         Handler(Looper.getMainLooper()).postDelayed({
+            speakWithVoiceService(speechText)
+        }, 900)
+
+        Handler(Looper.getMainLooper()).postDelayed({
             openLalamove(sbn)
-        }, 2500)
+        }, 1800)
     }
 
     private fun speakWithVoiceService(text: String) {
@@ -100,7 +104,9 @@ class BookingNotificationListener : NotificationListenerService() {
         val vibrator = getSystemService(VIBRATOR_SERVICE) as Vibrator
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 300, 150, 300), -1))
+            vibrator.vibrate(
+                VibrationEffect.createWaveform(longArrayOf(0, 300, 150, 300), -1)
+            )
         } else {
             vibrator.vibrate(longArrayOf(0, 300, 150, 300), -1)
         }
