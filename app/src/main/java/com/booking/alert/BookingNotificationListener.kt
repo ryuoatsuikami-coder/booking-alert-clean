@@ -1,48 +1,12 @@
 package com.booking.alert
 
 import android.app.Notification
-import android.app.PendingIntent
-import android.content.Context
 import android.content.Intent
-import android.media.AudioAttributes
 import android.os.*
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
-import android.speech.tts.TextToSpeech
-import java.util.Locale
 
 class BookingNotificationListener : NotificationListenerService() {
-
-    private var tts: TextToSpeech? = null
-    private var ttsReady = false
-    private var pendingText: String? = null
-
-    override fun onCreate() {
-        super.onCreate()
-
-        tts = TextToSpeech(applicationContext) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                ttsReady = true
-                tts?.language = Locale.ENGLISH
-                tts?.setSpeechRate(1.0f)
-                tts?.setPitch(1.0f)
-
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    tts?.setAudioAttributes(
-                        AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                            .build()
-                    )
-                }
-
-                pendingText?.let {
-                    speakNow(it)
-                    pendingText = null
-                }
-            }
-        }
-    }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         if (sbn == null) return
@@ -66,25 +30,22 @@ class BookingNotificationListener : NotificationListenerService() {
         val speechText = "${route.first} to ${route.second}. Fare $fare pesos."
 
         vibrate()
-        speakNow(speechText)
+        openBookingAlertAndSpeak(speechText)
 
         Handler(Looper.getMainLooper()).postDelayed({
             openLalamove(sbn)
-        }, 2500)
+        }, 2800)
     }
 
-    private fun speakNow(text: String) {
-        if (!ttsReady || tts == null) {
-            pendingText = text
-            return
-        }
-
-        tts?.speak(
-            text,
-            TextToSpeech.QUEUE_FLUSH,
-            null,
-            "booking_alert_voice"
+    private fun openBookingAlertAndSpeak(text: String) {
+        val intent = Intent(this, MainActivity::class.java)
+        intent.addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK or
+            Intent.FLAG_ACTIVITY_CLEAR_TOP or
+            Intent.FLAG_ACTIVITY_SINGLE_TOP
         )
+        intent.putExtra("speak_text", text)
+        startActivity(intent)
     }
 
     private fun extractFare(text: String): Int {
@@ -121,8 +82,7 @@ class BookingNotificationListener : NotificationListenerService() {
     }
 
     private fun vibrate() {
-        val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-
+        val vibrator = getSystemService(VIBRATOR_SERVICE) as Vibrator
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 300, 150, 300), -1))
         } else {
@@ -139,11 +99,5 @@ class BookingNotificationListener : NotificationListenerService() {
         val launchIntent = packageManager.getLaunchIntentForPackage(sbn.packageName)
         launchIntent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (launchIntent != null) startActivity(launchIntent)
-    }
-
-    override fun onDestroy() {
-        tts?.stop()
-        tts?.shutdown()
-        super.onDestroy()
     }
 }
