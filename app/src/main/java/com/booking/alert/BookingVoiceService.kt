@@ -24,11 +24,71 @@ class BookingVoiceService : Service(), TextToSpeech.OnInitListener {
 
         val text = intent?.getStringExtra("speak_text")
         if (!text.isNullOrBlank()) {
-            pendingText = text
-            speakNow(text)
+            if (shouldSpeakBooking(text)) {
+                val spokenText = buildMatchedSpeech(text)
+                pendingText = spokenText
+                speakNow(spokenText)
+            }
         }
 
         return START_STICKY
+    }
+
+    private fun shouldSpeakBooking(text: String): Boolean {
+        val prefs = getSharedPreferences("booking_prefs", MODE_PRIVATE)
+
+        val speakOnlyMatched = prefs.getBoolean("speak_only_matched", true)
+        if (!speakOnlyMatched) return true
+
+        val minFare = prefs.getInt("min_fare", 200)
+        val fare = extractFare(text)
+
+        if (fare < minFare) return false
+
+        val routes = prefs.getStringSet("routes", emptySet()) ?: emptySet()
+
+        for (route in routes) {
+            val enabled = prefs.getBoolean("route_$route", true)
+            if (!enabled) continue
+
+            val parts = route.split(">")
+            if (parts.size != 2) continue
+
+            val pickup = parts[0].trim()
+            val dropoff = parts[1].trim()
+
+            val pickupMatched = text.contains(pickup, ignoreCase = true)
+            val dropoffMatched = text.contains(dropoff, ignoreCase = true)
+
+            if (pickupMatched && dropoffMatched) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private fun extractFare(text: String): Int {
+        val patterns = listOf(
+            Regex("₱\\s*(\\d+)", RegexOption.IGNORE_CASE),
+            Regex("PHP\\s*(\\d+)", RegexOption.IGNORE_CASE),
+            Regex("(\\d+)\\s*pesos", RegexOption.IGNORE_CASE),
+            Regex("fare\\s*(\\d+)", RegexOption.IGNORE_CASE),
+            Regex("fare\\s*₱?\\s*(\\d+)", RegexOption.IGNORE_CASE)
+        )
+
+        for (pattern in patterns) {
+            val match = pattern.find(text)
+            if (match != null) {
+                return match.groupValues[1].toIntOrNull() ?: 0
+            }
+        }
+
+        return 0
+    }
+
+    private fun buildMatchedSpeech(text: String): String {
+        return "Pasok sa preferred route. $text. Pwede itong i-consider."
     }
 
     override fun onInit(status: Int) {
@@ -86,7 +146,7 @@ class BookingVoiceService : Service(), TextToSpeech.OnInitListener {
 
         val notification = Notification.Builder(this, channelId)
             .setContentTitle("Booking Alert is running")
-            .setContentText("Voice alert is active")
+            .setContentText("Only matched preferred-route bookings will be spoken")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true)
             .build()
