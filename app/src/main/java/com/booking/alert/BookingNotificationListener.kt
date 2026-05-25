@@ -31,7 +31,7 @@ class BookingNotificationListener : NotificationListenerService() {
         val matchedRoute = matchPreferredRoute(route.first, route.second) ?: return
 
         val speechText =
-            "Pasok sa preferred route. ${matchedRoute.first} to ${matchedRoute.second}. Fare $fare pesos. Pwede itong i-consider."
+            "Preferred booking. ${matchedRoute.first} to ${matchedRoute.second}. Fare $fare pesos."
 
         vibrate()
         speakWithVoiceService(speechText)
@@ -184,9 +184,9 @@ class BookingNotificationListener : NotificationListenerService() {
                 if (intent != null) {
                     intent.addFlags(
                         Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                        Intent.FLAG_ACTIVITY_SINGLE_TOP
-                    )
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+                )
                     startActivity(intent)
                     return
                 }
