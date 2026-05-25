@@ -88,7 +88,7 @@ class BookingVoiceService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun buildMatchedSpeech(text: String): String {
-        return "Pasok sa preferred route. $text. Pwede itong i-consider."
+        return "Preferred route. $text. Consider."
     }
 
     override fun onInit(status: Int) {
