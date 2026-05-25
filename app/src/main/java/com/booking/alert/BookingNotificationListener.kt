@@ -33,12 +33,8 @@ class BookingNotificationListener : NotificationListenerService() {
         speakWithVoiceService(speechText)
 
         Handler(Looper.getMainLooper()).postDelayed({
-            speakWithVoiceService(speechText)
-        }, 900)
-
-        Handler(Looper.getMainLooper()).postDelayed({
             openLalamove(sbn)
-        }, 1800)
+        }, 800)
     }
 
     private fun speakWithVoiceService(text: String) {
@@ -105,7 +101,10 @@ class BookingNotificationListener : NotificationListenerService() {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             vibrator.vibrate(
-                VibrationEffect.createWaveform(longArrayOf(0, 300, 150, 300), -1)
+                VibrationEffect.createWaveform(
+                    longArrayOf(0, 300, 150, 300),
+                    -1
+                )
             )
         } else {
             vibrator.vibrate(longArrayOf(0, 300, 150, 300), -1)
@@ -113,13 +112,31 @@ class BookingNotificationListener : NotificationListenerService() {
     }
 
     private fun openLalamove(sbn: StatusBarNotification) {
+        // 1. Try clicking exact Lalamove notification
         try {
-            sbn.notification.contentIntent?.send()
-            return
+            val pendingIntent = sbn.notification.contentIntent
+            if (pendingIntent != null) {
+                pendingIntent.send()
+                return
+            }
         } catch (_: Exception) {}
 
+        // 2. Try opening package from notification
+        try {
+            val launchIntent = packageManager.getLaunchIntentForPackage(sbn.packageName)
+            if (launchIntent != null) {
+                launchIntent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+                )
+                startActivity(launchIntent)
+                return
+            }
+        } catch (_: Exception) {}
+
+        // 3. Try known Lalamove driver package names
         val packages = listOf(
-            sbn.packageName,
             "com.lalamove.huolala.driver",
             "com.lalamove.client.driver",
             "com.lalamove.global.driver",
@@ -128,10 +145,14 @@ class BookingNotificationListener : NotificationListenerService() {
 
         for (pkg in packages) {
             try {
-                val launchIntent = packageManager.getLaunchIntentForPackage(pkg)
-                if (launchIntent != null) {
-                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    startActivity(launchIntent)
+                val intent = packageManager.getLaunchIntentForPackage(pkg)
+                if (intent != null) {
+                    intent.addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    )
+                    startActivity(intent)
                     return
                 }
             } catch (_: Exception) {}
