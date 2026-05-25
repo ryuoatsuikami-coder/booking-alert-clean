@@ -35,6 +35,10 @@ class BookingNotificationListener : NotificationListenerService() {
 
         vibrate()
         speakWithVoiceService(speechText)
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            openLalamove(sbn)
+        }, 800)
     }
 
     private fun speakWithVoiceService(text: String) {
@@ -142,6 +146,51 @@ class BookingNotificationListener : NotificationListenerService() {
             )
         } else {
             vibrator.vibrate(longArrayOf(0, 300, 150, 300), -1)
+        }
+    }
+
+    private fun openLalamove(sbn: StatusBarNotification) {
+        try {
+            val pendingIntent = sbn.notification.contentIntent
+            if (pendingIntent != null) {
+                pendingIntent.send()
+                return
+            }
+        } catch (_: Exception) {}
+
+        try {
+            val launchIntent = packageManager.getLaunchIntentForPackage(sbn.packageName)
+            if (launchIntent != null) {
+                launchIntent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+                )
+                startActivity(launchIntent)
+                return
+            }
+        } catch (_: Exception) {}
+
+        val packages = listOf(
+            "com.lalamove.huolala.driver",
+            "com.lalamove.client.driver",
+            "com.lalamove.global.driver",
+            "com.lalamove.driver"
+        )
+
+        for (pkg in packages) {
+            try {
+                val intent = packageManager.getLaunchIntentForPackage(pkg)
+                if (intent != null) {
+                    intent.addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    )
+                    startActivity(intent)
+                    return
+                }
+            } catch (_: Exception) {}
         }
     }
 }
