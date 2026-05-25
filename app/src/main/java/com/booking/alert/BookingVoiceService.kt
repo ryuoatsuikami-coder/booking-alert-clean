@@ -2,6 +2,7 @@ package com.booking.alert
 
 import android.app.*
 import android.content.Intent
+import android.media.AudioAttributes
 import android.os.*
 import android.speech.tts.TextToSpeech
 import java.util.Locale
@@ -14,44 +15,60 @@ class BookingVoiceService : Service(), TextToSpeech.OnInitListener {
 
     override fun onCreate() {
         super.onCreate()
-        tts = TextToSpeech(this, this)
         startForegroundServiceNotification()
+        tts = TextToSpeech(applicationContext, this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        startForegroundServiceNotification()
+
         val text = intent?.getStringExtra("speak_text")
         if (!text.isNullOrBlank()) {
+            pendingText = text
             speakNow(text)
         }
+
         return START_STICKY
     }
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
-            tts?.language = Locale("en", "PH")
-            tts?.setSpeechRate(1.0f)
-            tts?.setPitch(1.0f)
             ready = true
+            tts?.language = Locale("en", "PH")
+            tts?.setSpeechRate(0.95f)
+            tts?.setPitch(1.0f)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                tts?.setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+            }
 
             pendingText?.let {
                 speakNow(it)
-                pendingText = null
             }
         }
     }
 
     private fun speakNow(text: String) {
-        if (!ready) {
+        if (!ready || tts == null) {
             pendingText = text
             return
         }
 
-        tts?.speak(
-            text,
-            TextToSpeech.QUEUE_FLUSH,
-            null,
-            "booking_voice"
-        )
+        tts?.stop()
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            tts?.speak(
+                text,
+                TextToSpeech.QUEUE_FLUSH,
+                null,
+                "booking_voice_${System.currentTimeMillis()}"
+            )
+        }, 250)
     }
 
     private fun startForegroundServiceNotification() {
@@ -63,15 +80,15 @@ class BookingVoiceService : Service(), TextToSpeech.OnInitListener {
                 "Booking Alert Running",
                 NotificationManager.IMPORTANCE_LOW
             )
-
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(channel)
         }
 
         val notification = Notification.Builder(this, channelId)
             .setContentTitle("Booking Alert is running")
-            .setContentText("Listening for preferred bookings")
+            .setContentText("Voice alert is active")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setOngoing(true)
             .build()
 
         startForeground(1, notification)
